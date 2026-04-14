@@ -44,9 +44,11 @@ op: You have passed!
 riscv64-linux-gnu-objdump -d ./target_shradhakedia09 | grep -A 50 "<main>"
 ```
 
-Finding: Program uses gets() which has no bounds checking
+Finding:
+Program uses gets() which has no bounds checking
 
 104d0: addi sp,sp,-304    # 304 byte buffer allocated
+
 104d8: jalr _IO_gets      # gets() called - VULNERABLE!
 
 
