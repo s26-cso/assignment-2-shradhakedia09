@@ -52,16 +52,15 @@ Finding: Program uses gets() which has no bounds checking
 
 
 2) Understood stack layout:
+
 High Address
-┌─────────────────┐
-│  return address │  <- 8 bytes (we overwrite this!)
-├─────────────────┤
-│    saved s0     │  <- 8 bytes
-├─────────────────┤
-│                 │
-│  304 byte buf   │  <- our input goes here
-│                 │
-└─────────────────┘
+
+return address <- 8 bytes (we overwrite this!)
+
+saved s0 <- 8 bytes
+
+304 byte buf <- our input goes here
+
 Low Address
 
 3) FOund target address:
