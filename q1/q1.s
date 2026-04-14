@@ -22,51 +22,80 @@ make_node:
     ret                    # return (a0 has pointer to new node NOW)
 
 
-    .globl insert
-
+   .globl insert
 insert:
-    addi sp, sp, -24       # growing stack by 24 bytes
-    sd ra, 16(sp)          # save ra
-    sd a0, 8(sp)           #save a0(pointer to node)
-    sw a1, 4(sp)           #save value(a1)
+    # a0 = root pointer, a1 = value to insert
+    beqz a0, make_new_root    # if root == NULL, create new root
 
-    beqz a0, new_node      #if node==NULL, jump to fucntion new_node
+    # Save root so we can return it at the end
+    addi sp, sp, -32
+    sd ra, 0(sp)
+    sd a0, 8(sp)              # save original root
+    sd a1, 16(sp)             # save value (in case clobbered)
 
-    lw t4, 0(a0)           #laod node->value to t4
-    lw t5, 4(sp)           #relaod value we want to add (newnode->val)
+    mv t0, a0                 # t0 = current node
+    li t1, 0                  # t1 = parent = NULL
 
-    blt t4, t5, go_right   #if val > node->val we go right
-    blt t5, t4, go_left    #if val < node->val we go left [t4: current_node->val, t5: new_node->val]
-    j finish_insert        #if equal, we do nothing
+loop:
+    beqz t0, insert_here      # if current == NULL, insert here
 
-go_left:
-    ld t3, 8(a0)           # t3=node->left
-    mv a0, t3              #a0=node->left
-    mv a1, t5              #a1=value of new node
-    call insert            #recrusivelt adding into left subtree
-    ld t6, 8(sp)           #relaod orignal node pointer
-    sd a0, 8(t6)           # node->left= result of recursive call
-    mv a0, t6              #retuning original node
-    j finish_insert
+    mv t1, t0                 # parent = current
+    lw t2, 0(t0)              # t2 = current node value
 
-go_right:
-    ld t3, 16(a0)          #same as go_left but everything happens in terms of the right subtree
-    mv a0, t3
-    mv a1, t5
-    call insert
-    ld t6, 8(sp)
-    sd a0, 16(t6)
-    mv a0, t6
-    j finish_insert
+    blt a1, t2, go_l          # if val < node val, go left
+    blt t2, a1, go_r          # if val > node val, go right
+    
+    # equal: value already exists, do nothing
+    ld ra, 0(sp)
+    ld a0, 8(sp)              # return original root
+    addi sp, sp, 32
+    ret
 
-new_node:
-    lw a0, 4(sp)           #load value from stack
-    call make_node         #creating a new node with that value [a0 now has a pointer to new node]
+go_l:
+    ld t0, 8(t0)              # t0 = current->left
+    j loop
 
-finish_insert:
-    ld ra, 16(sp)          #reloading ra
-    addi sp, sp, 24
-    ret                    #return node pointer in a0
+go_r:
+    ld t0, 16(t0)             # t0 = current->right
+    j loop
+
+insert_here:
+    # t1 = parent node (guaranteed non-NULL since root wasn't NULL)
+    # a1 = value to insert
+    # Need to save t1 across call to make_node (caller-saved, may be clobbered)
+    
+    sd t1, 24(sp)             # save parent pointer
+
+    mv a0, a1                 # a0 = value for make_node
+    call make_node            # allocate new node, returned in a0
+    mv t3, a0                 # t3 = new node pointer
+
+    ld t1, 24(sp)             # restore parent pointer
+    ld a1, 16(sp)             # restore value
+
+    lw t2, 0(t1)              # t2 = parent->val
+
+    blt a1, t2, attach_left
+
+attach_right:
+    sd t3, 16(t1)             # parent->right = new node
+    j restore_and_return
+
+attach_left:
+    sd t3, 8(t1)              # parent->left = new node
+
+restore_and_return:
+    ld ra, 0(sp)
+    ld a0, 8(sp)              # return ORIGINAL root
+    addi sp, sp, 32
+    ret
+
+make_new_root:
+    # root was NULL, so new node IS the root
+    # no need to save/restore, just call make_node and return
+    mv a0, a1
+    call make_node            # new root returned in a0
+    ret
 
 
     .globl get

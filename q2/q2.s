@@ -1,220 +1,161 @@
 .data
+fmt_int: .string "%d"
+fmt_spc: .string " "
+fmt_nl:  .string "\n"
 
-fmt_int: .string "%d"        # format for printf
-fmt_spc: .string " "         # space between outputs
-fmt_nl:  .string "\n"        # newline at end
-answers: .space 400          # stores answers(will get overwritten with results)
-originals: .space 400        # stores original values(we never touch this one)
-mystack: .space 400          # our stack
+arr: .space 400       # input array
+res: .space 400       # result array
+stk: .space 400       # stack storing INDICES
 
-# since it is command line arg, argv in a1, argc in a0
-# n. of integers = argc-1, cuz we ignore the name of the cmd
 .text
-.global main 
+.globl main
 main:
-
-    addi sp, sp, -8
+    addi sp, sp, -16
     sd ra, 0(sp)
-    #saving ra so return address is not lost
+    sd s0, 8(sp)
 
-    #also store no. of ints in s1
-    addi s1, a0, -1    #s1 = argc-1 = number of integers
+    # s0 = n = argc - 1
+    addi s0, a0, -1
 
-    addi t3, a0, -1    #t3 = counter for input loop
-    la t4, answers     #t4 = pointer into answers
-    addi a1, a1, 8     #skipping program name in argv
+    mv t0, s0           # counter
+    la t1, arr
+    addi a1, a1, 8      # skip program name
 
-    read_args:
-        beq zero, t3, args_done  #all numbers parsed, exit loop
+read_loop:
+    beqz t0, read_done
 
-        #t3, t4, a1 need to be saved to sp, since atoi will overwrite them
-        addi sp, sp, -24
-        sd a1, 0(sp)
-        sd t3, 8(sp)
-        sd t4, 16(sp)
+    addi sp, sp, -24
+    sd a1, 0(sp)
+    sd t0, 8(sp)
+    sd t1, 16(sp)
 
-        ld a0, 0(a1)   #loading current argv string
+    ld a0, 0(a1)
+    call atoi
 
-        call atoi      #converting string to int, result comes back in a0
+    ld a1, 0(sp)
+    ld t0, 8(sp)
+    ld t1, 16(sp)
+    addi sp, sp, 24
 
-        #restoring regs after atoi
-        ld a1, 0(sp)
-        ld t3, 8(sp)
-        ld t4, 16(sp)        
-        addi sp, sp, 24
+    sw a0, 0(t1)        # arr[i] = atoi(argv[i+1])
 
-        sw a0, 0(t4)   #storing the integer we got from atoi into answers
+    addi t1, t1, 4
+    addi t0, t0, -1
+    addi a1, a1, 8
+    j read_loop
 
-        addi t4, t4, 4  #moving to next answers slot (4 bytes cuz int)
+read_done:
+    # initialise result array to -1
+    la t1, res
+    mv t0, s0
+init_loop:
+    beqz t0, init_done
+    li t2, -1
+    sw t2, 0(t1)
+    addi t1, t1, 4
+    addi t0, t0, -1
+    j init_loop
+init_done:
 
-        addi t3, t3, -1 #one int parsed, decrement counter
+    la s1, arr          # s1 = arr base
+    la s2, stk          # s2 = stack base (stores indices)
+    la s3, res          # s3 = result base
+    li s4, 0            # s4 = stack size
 
-        addi a1, a1, 8  #moving to next argv string
+    # i = n-1 down to 0
+    addi t4, s0, -1     # t4 = i = n-1
 
-        j read_args
+process:
+    bltz t4, print      # if i < 0, done
 
-    args_done:
+    # while stack not empty AND arr[stack.top()] <= arr[i]: pop
+    # actually pseudocode pops while arr[stack.top()] <= arr[i]
+    # meaning keep only indices where arr[idx] > arr[i]
 
-        # copying answers into originals so we always have the original values
-        # answers will get overwritten with results but originals will not change
-        la t3, answers
-        la t4, originals
-        mv t5, s1
-    make_copy:
-        beqz t5, copy_finished
-        lw t6, 0(t3)        #loading from answers
-        sw t6, 0(t4)        #storing into originals
-        addi t3, t3, 4      #moving to next answers slot
-        addi t4, t4, 4      #moving to next originals slot
-        addi t5, t5, -1     #decrementing counter
-        j make_copy
-    copy_finished:
-    
-    #input is done, now we use the stack
+    # load arr[i]
+    slli t0, t4, 2
+    add t0, t0, s1
+    lw t0, 0(t0)        # t0 = arr[i]
 
-    init_stack:
-        #s1 has no. of elements
-        la s2, answers
-        addi t3, s1, 0      #t3 = no. of elements left to be processed
+pop_loop:
+    beqz s4, no_greater
 
-        la s3, mystack
-        li s4, 0            #s4 tracks no. of elements in stack
+    addi t1, s4, -1
+    slli t1, t1, 2
+    add t1, t1, s2
+    lw t2, 0(t1)        # t2 = stack top INDEX
 
-        #s6 = base of originals, we do not touch this one
-        la s6, originals
+    # compute arr[t2]
+    slli t3, t2, 2
+    add t3, t3, s1
+    lw t3, 0(t3)        # t3 = arr[stack.top()]
 
-        #setting s2 to point to last element of answers
-        li t5, 4
-        mul t4, s1, t5
-        
-        add s2, t4, s2
-        addi s2, s2, -4     #s2 = answers + (n-1)*4, pointing to last element
+    bgt t3, t0, found   # if arr[top] > arr[i], found it
+    addi s4, s4, -1     # else pop
+    j pop_loop
 
-        #pushing index (n-1) onto stack
-        addi t4, s1, -1
-        sw t4, 0(s3)
-        addi s4, s4, 1
+no_greater:
+    # result[i] = -1 (already initialised)
+    j push_and_next
 
-        #overwriting answers[n-1] with -1 since it has no next greater element
-        li t4, -1
-        sw t4, 0(s2)
+found:
+    # result[i] = stack.top() = t2 (index)
+    slli t1, t4, 2
+    add t1, t1, s3
+    sw t2, 0(t1)        # res[i] = top index
 
-        addi s2, s2, -4     #moving left to second last element
-        addi t3, t3, -1     #one element processed
+push_and_next:
+    # push i onto stack
+    slli t1, s4, 2
+    add t1, t1, s2
+    sw t4, 0(t1)        # stack[s4] = i
+    addi s4, s4, 1
 
-    find_next_greater:
-        #processing n-1 elements from right to left
-        #if t3=0, we are done
-        beq t3, zero, print_answers
+    addi t4, t4, -1     # i--
+    j process
 
-        la s5, answers
+print:
+    la s1, res
+    mv t0, s0
+    li t5, 0            # first element flag
 
-        #loading original value of answers[i] from originals, not answers
-        #bcz answers is being overwritten with results
-        sub t6, s2, s5
-        srai t6, t6, 2
-        slli t6, t6, 2
-        add t6, t6, s6
-        lw t4, 0(t6)        #t4 = original value at current position
+print_loop:
+    beqz t0, print_nl
 
-        pop_stk:
-            #if stack is empty, no next greater exists
-            beq s4, zero, no_greater
+    beqz t5, no_space   # skip space before first element
 
-            #peeking at stack top (its an index not a value)
-            #s4 tracks no. of elements, s3 keeps base address always
-            addi t5, s4, -1
-            slli t5, t5, 2
-            add t5, t5, s3
-            lw t5, 0(t5)    #t5 = index at top of stack
+    addi sp, sp, -16
+    sd t0, 0(sp)
+    sd s1, 8(sp)
+    la a0, fmt_spc
+    call printf
+    ld t0, 0(sp)
+    ld s1, 8(sp)
+    addi sp, sp, 16
 
-            #loading originals[mystack[top]] to get actual value at that index
-            #loading from originals not answers, bcz answers[mystack[top]] might already be overwritten
-            slli t6, t5, 2
-            add t6, t6, s6
-            lw t6, 0(t6)    #t6 = value at that index
+no_space:
+    li t5, 1
 
-            bgt t6, t4, found_greater   
-            #if mystack[top] value > answers[i], answer is t5(the index)
+    addi sp, sp, -16
+    sd t0, 0(sp)
+    sd s1, 8(sp)
+    lw a1, 0(s1)
+    la a0, fmt_int
+    call printf
+    ld t0, 0(sp)
+    ld s1, 8(sp)
+    addi sp, sp, 16
 
-            #popping since mystack[top] <= answers[i]
-            addi s4, s4, -1
-            j pop_stk
+    addi t0, t0, -1
+    addi s1, s1, 4
+    j print_loop
 
-            no_greater:
-            #by default we put -1 to answers[i] if there is no next greater
-                li t5, -1
-            
-            found_greater:
-                sw t5, 0(s2)    #storing answer(index or -1) into answers[i]
+print_nl:
+    la a0, fmt_nl
+    call printf
 
-                #getting current index i
-                sub t5, s2, s5
-                srai t5, t5, 2  #t5 = current index i
-
-                #pushing current index i onto the stack
-                slli t6, s4, 2
-                add t6, t6, s3
-                sw t5, 0(t6)
-                addi s4, s4, 1
-
-                addi s2, s2, -4 #moving left to next element
-                addi t3, t3, -1 #one more element processed
-
-                j find_next_greater
-
-    print_answers:
-        la s2, answers      #resetting s2 to start of answers
-        mv t3, s1           #t3 = n, will count down
-
-    output_loop:
-        beqz t3, output_done #printed all elements, done
-
-        #saving regs since printf will overwrite them
-        addi sp, sp, -32
-        sd s1, 0(sp)
-        sd s2, 8(sp)
-        sd s4, 16(sp)
-        sd t3, 24(sp)
-
-        lw a1, 0(s2)    #a1 = answers[i], the answer for this position
-        la a0, fmt_int  #format string "%d"
-        call printf
-
-        ld s1, 0(sp)
-        ld s2, 8(sp)
-        ld s4, 16(sp)
-        ld t3, 24(sp)
-        addi sp, sp, 32
-
-        addi t3, t3, -1 #one less to print
-        addi s2, s2, 4  #moving to next element
-
-        beqz t3, output_done #if that was the last one, skip the space
-
-        #printing space between elements
-        addi sp, sp, -32
-        sd s1, 0(sp)
-        sd s2, 8(sp)
-        sd s4, 16(sp)
-        sd t3, 24(sp)
-
-        la a0, fmt_spc
-        call printf
-
-        ld s1, 0(sp)
-        ld s2, 8(sp)
-        ld s4, 16(sp)
-        ld t3, 24(sp)
-        addi sp, sp, 32
-
-        j output_loop
-
-    output_done:
-        la a0, fmt_nl   #newline at the end
-        call printf
-
-        ld ra, 0(sp)    #restoring ra before returning
-        addi sp, sp, 8
-        li a0, 0
-        ret
+    ld ra, 0(sp)
+    ld s0, 8(sp)
+    addi sp, sp, 16
+    li a0, 0
+    ret
